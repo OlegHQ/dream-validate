@@ -14,6 +14,20 @@ type post_form = {
 }
 [@@deriving dream_form]
 
+type notice_query = {
+  notice : string option;
+  notice_type : string option;
+}
+[@@deriving dream_form]
+
+type media_session = {
+  media_ids : string list
+    [@form.key "media_id"]
+    [@session.key "composer_media_ids"]
+    [@session.csv];
+}
+[@@deriving dream_form]
+
 type api_post = {
   body : string [@json.trim] [@validate.required] [@validate.max_length 5000];
   media_ids : string list [@json.key "mediaIds"];
@@ -56,6 +70,34 @@ let test_post_form () =
       Alcotest.failf "unexpected errors: %s"
         (Dream_validate.errors_to_string errors)
 
+let test_form_fields () =
+  Alcotest.(check (list string))
+    "form fields" [ "body"; "media_id" ] post_form_form_fields
+
+let test_query_decoder () =
+  let request =
+    Dream.request ~method_:`GET
+      ~target:"/?notice=Saved&notice_type=success&ignored=yes"
+      ""
+  in
+  match notice_query_of_query request with
+  | Ok query ->
+      Alcotest.(check (option string)) "notice" (Some "Saved") query.notice;
+      Alcotest.(check (option string))
+        "notice_type" (Some "success") query.notice_type
+  | Error errors ->
+      Alcotest.failf "unexpected errors: %s"
+        (Dream_validate.errors_to_string errors)
+
+let test_session_csv_metadata () =
+  Alcotest.(check (list string))
+    "session scalar fields" [] media_session_session_fields;
+  Alcotest.(check (list (pair string string)))
+    "session csv fields"
+    [ ("media_id", "composer_media_ids") ]
+    media_session_session_csv_fields;
+  ignore (media_session_of_session : Dream.request -> media_session Dream_validate.result)
+
 let test_api_post_json () =
   match
     api_post_of_json
@@ -90,6 +132,10 @@ let () =
           Alcotest.test_case "registration ok" `Quick test_registration_ok;
           Alcotest.test_case "registration errors" `Quick test_registration_errors;
           Alcotest.test_case "post form" `Quick test_post_form;
+          Alcotest.test_case "form fields" `Quick test_form_fields;
+          Alcotest.test_case "query decoder" `Quick test_query_decoder;
+          Alcotest.test_case "session csv metadata" `Quick
+            test_session_csv_metadata;
         ] );
       ( "dream_json",
         [

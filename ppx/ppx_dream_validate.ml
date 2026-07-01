@@ -29,6 +29,16 @@ let form_trim_attr =
     Ast_pattern.(pstr nil)
     ()
 
+let session_key_attr =
+  Attribute.declare "session.key" Attribute.Context.label_declaration
+    Ast_pattern.(single_expr_payload (estring __))
+    Fun.id
+
+let session_csv_attr =
+  Attribute.declare "session.csv" Attribute.Context.label_declaration
+    Ast_pattern.(pstr nil)
+    ()
+
 let json_key_attr =
   Attribute.declare "json.key" Attribute.Context.label_declaration
     Ast_pattern.(single_expr_payload (estring __))
@@ -98,6 +108,12 @@ let is_form_trimmed field = Option.is_some (Attribute.get form_trim_attr field)
 
 let form_field_key field =
   Attribute.get form_key_attr field |> Option.value ~default:field.pld_name.txt
+
+let session_field_key field =
+  Attribute.get session_key_attr field
+  |> Option.value ~default:(form_field_key field)
+
+let is_session_csv field = Option.is_some (Attribute.get session_csv_attr field)
 
 let json_field_key field =
   Attribute.get json_key_attr field
@@ -278,6 +294,105 @@ let request_function td =
             Dream_validate.Form.decode_request request [%e source_fn]];
     ]
 
+let list_of_strings ~loc values = values |> List.map (str ~loc) |> A.elist ~loc
+
+let list_of_string_pairs ~loc values =
+  values
+  |> List.map (fun (left, right) ->
+       A.pexp_tuple ~loc [ str ~loc left; str ~loc right ])
+  |> A.elist ~loc
+
+let form_field_names_function td fields =
+  let loc = td.ptype_loc in
+  let type_name = td.ptype_name.txt in
+  let field_names = fields |> List.map form_field_key |> list_of_strings ~loc in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pat_var ~loc (type_name ^ "_form_fields"))
+        ~expr:field_names;
+    ]
+
+let session_field_names_function td fields =
+  let loc = td.ptype_loc in
+  let type_name = td.ptype_name.txt in
+  let scalar_fields, csv_fields =
+    fields
+    |> List.partition (fun field -> not (is_session_csv field))
+    |> fun (scalar_fields, csv_fields) ->
+    let csv_fields =
+      csv_fields
+      |> List.map (fun field ->
+           if field_type field <> `String_list then
+             Location.raise_errorf ~loc:field.pld_loc
+               "session.csv is supported only on string list fields";
+           (form_field_key field, session_field_key field))
+    in
+    (scalar_fields, csv_fields)
+  in
+  let scalar_field_names =
+    scalar_fields |> List.map session_field_key |> list_of_strings ~loc
+  in
+  let csv_field_names = list_of_string_pairs ~loc csv_fields in
+  A.pstr_value ~loc Nonrecursive
+    [
+      A.value_binding ~loc
+        ~pat:(pat_var ~loc (type_name ^ "_session_fields"))
+        ~expr:scalar_field_names;
+      A.value_binding ~loc
+        ~pat:(pat_var ~loc (type_name ^ "_session_csv_fields"))
+        ~expr:csv_field_names;
+    ]
+
+let form_boundary_functions td fields =
+  let loc = td.ptype_loc in
+  let type_name = td.ptype_name.txt in
+  let source_fn = var ~loc (type_name ^ "_of_source") in
+  let boundary name module_name =
+    A.value_binding ~loc
+      ~pat:(pat_var ~loc (type_name ^ name))
+      ~expr:
+        (A.pexp_fun ~loc Nolabel None (pat_var ~loc "request")
+           (app ~loc
+              (ident ~loc [ "Dream_validate"; module_name; "decode" ])
+              [
+                (Nolabel, var ~loc "request");
+                (Nolabel, var ~loc (type_name ^ "_form_fields"));
+                (Nolabel, source_fn);
+              ]))
+  in
+  let session_boundary =
+    let has_csv = List.exists is_session_csv fields in
+    A.value_binding ~loc
+      ~pat:(pat_var ~loc (type_name ^ "_of_session"))
+      ~expr:
+        (A.pexp_fun ~loc Nolabel None (pat_var ~loc "request")
+           (if has_csv then
+              app ~loc
+                (ident ~loc [ "Dream_validate"; "Session"; "decode_csv" ])
+                [
+                  (Nolabel, var ~loc "request");
+                  (Labelled "fields", var ~loc (type_name ^ "_session_fields"));
+                  ( Labelled "csv_fields",
+                    var ~loc (type_name ^ "_session_csv_fields") );
+                  (Nolabel, source_fn);
+                ]
+            else
+              app ~loc
+                (ident ~loc [ "Dream_validate"; "Session"; "decode" ])
+                [
+                  (Nolabel, var ~loc "request");
+                  (Nolabel, var ~loc (type_name ^ "_session_fields"));
+                  (Nolabel, source_fn);
+                ]))
+  in
+  A.pstr_value ~loc Nonrecursive
+    [
+      boundary "_of_query" "Query";
+      boundary "_of_route" "Route";
+      session_boundary;
+    ]
+
 let json_function td =
   let loc = td.ptype_loc in
   let type_name = td.ptype_name.txt in
@@ -321,9 +436,36 @@ let sig_for_type ~source td =
   match source with
   | `Form ->
       [
+        value (type_name ^ "_form_fields")
+          (A.ptyp_constr ~loc (lid ~loc [ "list" ])
+             [ A.ptyp_constr ~loc (lid ~loc [ "string" ]) [] ]);
+        value (type_name ^ "_session_fields")
+          (A.ptyp_constr ~loc (lid ~loc [ "list" ])
+             [ A.ptyp_constr ~loc (lid ~loc [ "string" ]) [] ]);
+        value (type_name ^ "_session_csv_fields")
+          (A.ptyp_constr ~loc (lid ~loc [ "list" ])
+             [
+               A.ptyp_tuple ~loc
+                 [
+                   A.ptyp_constr ~loc (lid ~loc [ "string" ]) [];
+                   A.ptyp_constr ~loc (lid ~loc [ "string" ]) [];
+                 ];
+             ]);
         value (type_name ^ "_of_source")
           (A.ptyp_arrow ~loc Nolabel source_type result_type);
         value (type_name ^ "_of_request")
+          (A.ptyp_arrow ~loc Nolabel
+             (A.ptyp_constr ~loc (lid ~loc [ "Dream"; "request" ]) [])
+             result_type);
+        value (type_name ^ "_of_query")
+          (A.ptyp_arrow ~loc Nolabel
+             (A.ptyp_constr ~loc (lid ~loc [ "Dream"; "request" ]) [])
+             result_type);
+        value (type_name ^ "_of_route")
+          (A.ptyp_arrow ~loc Nolabel
+             (A.ptyp_constr ~loc (lid ~loc [ "Dream"; "request" ]) [])
+             result_type);
+        value (type_name ^ "_of_session")
           (A.ptyp_arrow ~loc Nolabel
              (A.ptyp_constr ~loc (lid ~loc [ "Dream"; "request" ]) [])
              result_type);
@@ -349,7 +491,13 @@ let generate_form_str ~loc:_ ~path:_ (_rec_flag, tds) =
   tds
   |> List.concat_map (fun td ->
        let fields = ensure_supported_type ~deriver:"dream_form" td in
-       [ source_function ~source_kind:`Form td fields; request_function td ])
+       [
+         form_field_names_function td fields;
+         session_field_names_function td fields;
+         source_function ~source_kind:`Form td fields;
+         request_function td;
+         form_boundary_functions td fields;
+       ])
 
 let generate_form_sig ~loc:_ ~path:_ (_rec_flag, tds) =
   tds
