@@ -5,6 +5,8 @@ Typed Dream request decoding and declarative DTO validation for OCaml web apps.
 The package provides:
 
 - `Dream_validate.Form` runtime decoders for form/query-style field lists.
+- `Dream_validate.Query`, `Dream_validate.Route`, and
+  `Dream_validate.Session` adapters for non-body Dream boundaries.
 - `Dream_validate.Json` runtime decoders for JSON object fields and request
   bodies.
 - `Dream_validate.Validation` reusable validators and structured errors.
@@ -78,3 +80,18 @@ Generated functions:
   `<type>_of_request`.
 - `[@@deriving dream_json]` generates `<type>_of_json_source`,
   `<type>_of_json`, `<type>_of_json_string`, and `<type>_of_json_request`.
+
+Non-body boundaries can use the generated source decoder directly:
+
+```ocaml
+let route =
+  Dream_validate.Route.decode request [ "post_id" ] post_route_of_source
+
+let query =
+  Dream_validate.Query.decode request [ "notice"; "notice_type" ]
+    notice_query_of_source
+
+let session =
+  Dream_validate.Session.decode request [ "user_id"; "username" ]
+    user_session_of_source
+```

@@ -83,6 +83,32 @@ module Form : sig
   val decode_request : Dream.request -> 'a decoder -> 'a result
 end
 
+module Query : sig
+  val source : Dream.request -> string list -> Source.t
+  val decode : Dream.request -> string list -> 'a Form.decoder -> 'a result
+end
+
+module Route : sig
+  val source : Dream.request -> string list -> Source.t
+  val decode : Dream.request -> string list -> 'a Form.decoder -> 'a result
+end
+
+module Session : sig
+  val source : Dream.request -> string list -> Source.t
+  val source_csv :
+    Dream.request ->
+    fields:string list ->
+    csv_fields:(string * string) list ->
+    Source.t
+  val decode : Dream.request -> string list -> 'a Form.decoder -> 'a result
+  val decode_csv :
+    Dream.request ->
+    fields:string list ->
+    csv_fields:(string * string) list ->
+    'a Form.decoder ->
+    'a result
+end
+
 module Json : sig
   type source
   type 'a decoder = source -> 'a result

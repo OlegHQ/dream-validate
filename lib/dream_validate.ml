@@ -218,6 +218,57 @@ module Form = struct
     match of_request request with Error errors -> Error errors | Ok source -> decoder source
 end
 
+module Query = struct
+  let source request fields =
+    fields
+    |> List.map (fun field -> (field, Dream.query request field))
+    |> Source.of_query
+
+  let decode request fields decoder = Form.decode (source request fields) decoder
+end
+
+module Route = struct
+  let source request fields =
+    fields
+    |> List.map (fun field -> (field, Dream.param request field))
+    |> Source.of_fields
+
+  let decode request fields decoder = Form.decode (source request fields) decoder
+end
+
+module Session = struct
+  let source request fields =
+    fields
+    |> List.filter_map (fun field ->
+         Dream.session_field request field
+         |> Option.map (fun value -> (field, value)))
+    |> Source.of_fields
+
+  let source_csv request ~fields ~csv_fields =
+    let scalar_fields =
+      fields
+      |> List.filter_map (fun field ->
+           Dream.session_field request field
+           |> Option.map (fun value -> (field, value)))
+    in
+    let list_fields =
+      csv_fields
+      |> List.concat_map (fun (field, session_key) ->
+           Dream.session_field request session_key
+           |> Option.value ~default:""
+           |> String.split_on_char ','
+           |> List.map String.trim
+           |> List.filter (fun value -> value <> "")
+           |> List.map (fun value -> (field, value)))
+    in
+    Source.of_fields (scalar_fields @ list_fields)
+
+  let decode request fields decoder = Form.decode (source request fields) decoder
+
+  let decode_csv request ~fields ~csv_fields decoder =
+    Form.decode (source_csv request ~fields ~csv_fields) decoder
+end
+
 module Json = struct
   type source = (string * Yojson.Safe.t) list
   type 'a decoder = source -> 'a result

@@ -54,9 +54,20 @@ let test_json () =
   Alcotest.(check (result bool reject))
     "json bool" (Ok true) (Json.bool_field "active" source)
 
+let test_query_source () =
+  let request =
+    Dream.request ~method_:`GET ~target:"/?notice=Saved&empty=" ""
+  in
+  check_ok "query field" "Saved"
+    (Query.decode request [ "notice"; "empty" ] (Form.field "notice"))
+
 let () =
   Alcotest.run "dream-validate"
     [
       ("form", [ Alcotest.test_case "string" `Quick test_form_string; Alcotest.test_case "errors" `Quick test_form_errors ]);
       ("json", [ Alcotest.test_case "fields" `Quick test_json ]);
+      ( "request sources",
+        [
+          Alcotest.test_case "query" `Quick test_query_source;
+        ] );
     ]
