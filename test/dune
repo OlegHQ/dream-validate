@@ -1,0 +1,9 @@
+(test
+ (name test)
+ (libraries dream-validate alcotest))
+
+(test
+ (name test_ppx)
+ (libraries dream-validate alcotest)
+ (preprocess
+  (pps dream-validate.ppx)))

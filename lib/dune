@@ -1,0 +1,4 @@
+(library
+ (name dream_validate)
+ (public_name dream-validate)
+ (libraries dream yojson))
