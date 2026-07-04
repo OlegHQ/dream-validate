@@ -244,11 +244,11 @@ module Session = struct
          |> Option.map (fun value -> (field, value)))
     |> Source.of_fields
 
-  let source_csv request ~fields ~csv_fields =
+  let source_keyed request ~fields ~csv_fields =
     let scalar_fields =
       fields
-      |> List.filter_map (fun field ->
-           Dream.session_field request field
+      |> List.filter_map (fun (field, session_key) ->
+           Dream.session_field request session_key
            |> Option.map (fun value -> (field, value)))
     in
     let list_fields =
@@ -263,10 +263,17 @@ module Session = struct
     in
     Source.of_fields (scalar_fields @ list_fields)
 
+  let source_csv request ~fields ~csv_fields =
+    let fields = List.map (fun field -> (field, field)) fields in
+    source_keyed request ~fields ~csv_fields
+
   let decode request fields decoder = Form.decode (source request fields) decoder
 
   let decode_csv request ~fields ~csv_fields decoder =
     Form.decode (source_csv request ~fields ~csv_fields) decoder
+
+  let decode_keyed request ~fields ~csv_fields decoder =
+    Form.decode (source_keyed request ~fields ~csv_fields) decoder
 end
 
 module Json = struct

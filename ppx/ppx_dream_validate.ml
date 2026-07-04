@@ -333,12 +333,20 @@ let session_field_names_function td fields =
   let scalar_field_names =
     scalar_fields |> List.map session_field_key |> list_of_strings ~loc
   in
+  let keyed_scalar_fields =
+    scalar_fields
+    |> List.map (fun field -> (form_field_key field, session_field_key field))
+    |> list_of_string_pairs ~loc
+  in
   let csv_field_names = list_of_string_pairs ~loc csv_fields in
   A.pstr_value ~loc Nonrecursive
     [
       A.value_binding ~loc
         ~pat:(pat_var ~loc (type_name ^ "_session_fields"))
         ~expr:scalar_field_names;
+      A.value_binding ~loc
+        ~pat:(pat_var ~loc (type_name ^ "_session_keyed_fields"))
+        ~expr:keyed_scalar_fields;
       A.value_binding ~loc
         ~pat:(pat_var ~loc (type_name ^ "_session_csv_fields"))
         ~expr:csv_field_names;
@@ -362,29 +370,20 @@ let form_boundary_functions td fields =
               ]))
   in
   let session_boundary =
-    let has_csv = List.exists is_session_csv fields in
     A.value_binding ~loc
       ~pat:(pat_var ~loc (type_name ^ "_of_session"))
       ~expr:
         (A.pexp_fun ~loc Nolabel None (pat_var ~loc "request")
-           (if has_csv then
-              app ~loc
-                (ident ~loc [ "Dream_validate"; "Session"; "decode_csv" ])
-                [
-                  (Nolabel, var ~loc "request");
-                  (Labelled "fields", var ~loc (type_name ^ "_session_fields"));
-                  ( Labelled "csv_fields",
-                    var ~loc (type_name ^ "_session_csv_fields") );
-                  (Nolabel, source_fn);
-                ]
-            else
-              app ~loc
-                (ident ~loc [ "Dream_validate"; "Session"; "decode" ])
-                [
-                  (Nolabel, var ~loc "request");
-                  (Nolabel, var ~loc (type_name ^ "_session_fields"));
-                  (Nolabel, source_fn);
-                ]))
+           (app ~loc
+              (ident ~loc [ "Dream_validate"; "Session"; "decode_keyed" ])
+              [
+                (Nolabel, var ~loc "request");
+                ( Labelled "fields",
+                  var ~loc (type_name ^ "_session_keyed_fields") );
+                ( Labelled "csv_fields",
+                  var ~loc (type_name ^ "_session_csv_fields") );
+                (Nolabel, source_fn);
+              ]))
   in
   A.pstr_value ~loc Nonrecursive
     [

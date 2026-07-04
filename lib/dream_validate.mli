@@ -100,10 +100,21 @@ module Session : sig
     fields:string list ->
     csv_fields:(string * string) list ->
     Source.t
+  val source_keyed :
+    Dream.request ->
+    fields:(string * string) list ->
+    csv_fields:(string * string) list ->
+    Source.t
   val decode : Dream.request -> string list -> 'a Form.decoder -> 'a result
   val decode_csv :
     Dream.request ->
     fields:string list ->
+    csv_fields:(string * string) list ->
+    'a Form.decoder ->
+    'a result
+  val decode_keyed :
+    Dream.request ->
+    fields:(string * string) list ->
     csv_fields:(string * string) list ->
     'a Form.decoder ->
     'a result

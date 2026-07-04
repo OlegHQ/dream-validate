@@ -28,6 +28,12 @@ type media_session = {
 }
 [@@deriving dream_form]
 
+type oauth_session = {
+  state : string [@session.key "oauth_state"];
+  code_verifier : string [@session.key "oauth_verifier"];
+}
+[@@deriving dream_form]
+
 type api_post = {
   body : string [@json.trim] [@validate.required] [@validate.max_length 5000];
   media_ids : string list [@json.key "mediaIds"];
@@ -98,6 +104,28 @@ let test_session_csv_metadata () =
     media_session_session_csv_fields;
   ignore (media_session_of_session : Dream.request -> media_session Dream_validate.result)
 
+let test_session_scalar_keys () =
+  Alcotest.(check (list string))
+    "scalar session keys"
+    [ "oauth_state"; "oauth_verifier" ]
+    oauth_session_session_fields;
+  Alcotest.(check (list (pair string string)))
+    "keyed scalar session fields"
+    [ ("state", "oauth_state"); ("code_verifier", "oauth_verifier") ]
+    oauth_session_session_keyed_fields;
+  ignore (oauth_session_of_session : Dream.request -> oauth_session Dream_validate.result);
+  match
+    oauth_session_of_source
+      (source [ ("state", "state-123"); ("code_verifier", "verifier-123") ])
+  with
+  | Ok session ->
+      Alcotest.(check string) "state" "state-123" session.state;
+      Alcotest.(check string)
+        "code verifier" "verifier-123" session.code_verifier
+  | Error errors ->
+      Alcotest.failf "unexpected errors: %s"
+        (Dream_validate.errors_to_string errors)
+
 let test_api_post_json () =
   match
     api_post_of_json
@@ -136,6 +164,8 @@ let () =
           Alcotest.test_case "query decoder" `Quick test_query_decoder;
           Alcotest.test_case "session csv metadata" `Quick
             test_session_csv_metadata;
+          Alcotest.test_case "session scalar keys" `Quick
+            test_session_scalar_keys;
         ] );
       ( "dream_json",
         [
